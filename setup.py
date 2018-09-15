@@ -15,6 +15,7 @@ with codecs.open('version.txt', encoding='utf-8') as f:
 module1 = Extension(
     'mrfastmark',
      sources = [
+         './src/setup.c',
          './src/mrfastmark.c',
          './src/render.c',
          './src/html.c'

@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <stdbool.h>
 
+#include "setup.h"
+
 #ifdef __AVX2__
 #include <immintrin.h>
 #elif defined __SSE4_2__
@@ -22,6 +24,10 @@
 #endif
 
 
+
+#define CHAR8_LONG(a, b, c, d, e, f, g, h)       \
+   (((long)h << 56) | ((long)g << 48) | ((long)f << 40)   \
+    | ((long)e << 32) | (d << 24) | (c << 16) | (b << 8) | a)
 
 #define CHAR4_INT(a, b, c, d)         \
    (unsigned int)((d << 24) | (c << 16) | (b << 8) | a)
@@ -69,7 +75,7 @@ static int resizeBuffer(Encoder *e, size_t len)
 }
 
 #define resizeBufferIfNeeded(__enc, __len) \
-    if ( (size_t) ((__enc)->end - (__enc)->o) < (size_t) (__len))  { resizeBuffer((__enc), (__len)); }
+    if ( (size_t) ((__enc)->end - (__enc)->start) < (size_t) (__len))  { resizeBuffer((__enc), (__len)); }
 
 static inline void reverse(char* begin, char* end)
 {
@@ -81,6 +87,7 @@ static inline void reverse(char* begin, char* end)
   }
 }
 
+// Search for a range of characters and return a pointer to the location or buf_end if none are found
 static char *findchar_fast(char *buf, char *buf_end, char *ranges, size_t ranges_size, int *found)
 {
     *found = 0;
@@ -130,7 +137,6 @@ static char *findchar_fast(char *buf, char *buf_end, char *ranges, size_t ranges
 //}
 //
 
-static uint32_t s_httpcode = 0x70747468;
 static uint32_t s_h1 = 0x3e31683c;
 static uint64_t s_end_h1 = 0x0a0a3e31682f3c;
 static uint32_t s_para = 0x203e703c; // <p>
@@ -140,6 +146,10 @@ static char s_code[16]     = "<code>";
 static char s_end_code[16] = "</code>";
 static char s_strong[16]     = "<strong>";
 static char s_end_strong[16] = "</strong>";
+static char s_em[16]     = "<em>";
+static char s_end_em[16] = "</em>";
+static char s_strike[16]     = "<s>";
+static char s_end_strike[16] = "</s>";
 static char s_bq[16] = "<blockquote>\n";
 static char s_end_bq[16] = "\n</blockquote>";
 
@@ -193,7 +203,7 @@ int striphtml( const char *st, int l, Encoder *e ) {
 }
 
 int escape( const char *st, int l, Encoder *e ) {
-  
+  if ( l > 16000 ) return -1;  
   const char *p = st;
   const char *end = st+l;
   const char *last = st;
@@ -242,17 +252,29 @@ int escape( const char *st, int l, Encoder *e ) {
   return (int)(o-escbuf);
 }
 
+static char *em = NULL;
+static char *bold = NULL;
+static char *emph = NULL;
+static char *strike = NULL;
+static char *code = NULL;
+
 void line( const char *st, int l, Encoder *e ) {
 
-  //l = striphtml( st, l , e );
-  //st = stripbuf;
-  l = escape( st, l , e );
-  st = escbuf;
+  //memcpy( e->o, st, l ); e->o += l;
+  //return;
+
+  if ( strip_html_tags ) {
+    l = striphtml( st, l , e );
+    st = stripbuf;
+  }
+  int rc = escape( st, l , e );
+  if ( rc != -1 ) {
+    l = rc;
+    st = escbuf;
+  }
+
   //printf("After escape l is %d >%.*s<\n",l,l, st);
 
-  char *em = NULL;
-  char *bold = NULL;
-  char *code = NULL;
   int found;
   //printf(" l %d\n",l);
 
@@ -261,16 +283,15 @@ void line( const char *st, int l, Encoder *e ) {
   const char *last = st;
   //printf("A\n");
 
-  // TODO?
-  // Keep a stack of struct ( open/close, type, ptr )
-  // At end of line we construct by memcpy insert tag memcpy insert tag
-  // Unclosed tags are left in
-  //  **  `  `  **  **
+  // TODO Do this properly - right now we don't allow nested tags
+  // Keep a stack of objects
+  // At end of line we walk the stack writing to the output
+  // Unclosed tags are left in  **  `  `  **  **
 
   // Right now we don't allow nesting
   while ( p < end ) {
     //printf("line loop %c\n",*p);
-    static char ranges1[] = "**" "::" "\x00\x00" "<<" ">>" "``";
+    static char ranges1[] = "**" "::" "\x00\x00" "``" "~~" "]]";
     p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
     //printf("YAY\n");
     if ( found ) {
@@ -278,7 +299,7 @@ void line( const char *st, int l, Encoder *e ) {
       if ( p[0] == ':' ) {
 
         // http://
-        if ( p[1] == '/' && (p-e->start) > 4 && *((uint32_t*)(p-4)) == s_httpcode && p[2] == '/' ) {
+        if ( p[1] == '/' && (p-e->start) > 4 && *((uint32_t*)(p-4)) == CHAR4_INT('h','t','t','p') && p[2] == '/' ) {
           p += 3;
           char *linkstart = p; 
           while ( p < end && !(*p == '.' || *p == ' ' || *p == '\n') ) p++;
@@ -302,24 +323,60 @@ void line( const char *st, int l, Encoder *e ) {
           p++;
         }
       } 
-      else if ( p[0] == '*' && p[1] == '*' && !code) {
-        if ( bold ) {
-          memcpy( e->o, last, bold-last-2 ); e->o += bold-last-2;
-          memcpy( e->o, s_strong, 8); e->o += 8;
-          memcpy( e->o, bold, p-bold ); e->o += p-bold;
-          memcpy( e->o, s_end_strong, 9); e->o += 9;
-          bold = NULL;
+      else if ( p[0] == '*' && !code) {
+        if ( p[1] == '*' ) {
+          if ( bold ) {
+            memcpy( e->o, last, bold-last-2 ); e->o += bold-last-2;
+            memcpy( e->o, s_strong, 8); e->o += 8;
+            memcpy( e->o, bold, p-bold ); e->o += p-bold;
+            memcpy( e->o, s_end_strong, 9); e->o += 9;
+            bold = NULL;
+            p += 2;
+            last = p;
+          } else {
+            //if ( strike ) strike = NULL;
+            //if ( emph ) emph = NULL;
+            p += 2;
+            if ( !strike && !emph ) bold = p;
+            //printf( " before >%.*s<\n", (int)(bold-last), last );
+          }
+        } else {
+          if ( emph ) {
+            memcpy( e->o, last, emph-last-2 ); e->o += emph-last-2;
+            memcpy( e->o, s_em, 4); e->o += 4;
+            memcpy( e->o, emph, p-emph ); e->o += p-emph;
+            memcpy( e->o, s_end_em, 5); e->o += 5;
+            emph = NULL;
+            p += 1;
+            last = p;
+          } else {
+            //if ( bold ) bold = NULL;
+            //if ( strike ) strike = NULL;
+            p += 1;
+            if ( !strike && !bold ) emph = p;
+            //printf( " before >%.*s<\n", (int)(bold-last), last );
+          }
+        }
+      }
+
+      else if ( p[0] == '~' && p[1] == '~' && !code && !bold && !emph) {
+        if ( strike ) {
+          memcpy( e->o, last, strike-last-2 ); e->o += strike-last-2;
+          memcpy( e->o, s_strike, 3); e->o += 3;
+          memcpy( e->o, strike, p-strike ); e->o += p-strike;
+          memcpy( e->o, s_end_strike, 4); e->o += 4;
+          strike = NULL;
           p += 2;
           last = p;
         } else {
           p += 2;
-          bold = p;
+          strike = p;
           //printf( " before >%.*s<\n", (int)(bold-last), last );
         }
       }
+
       else if ( p[0] == 0x60 ) { //'`' ) {
         //printf("code tick\n");
-        if ( bold ) bold = NULL;
         if ( code ) {
           memcpy( e->o, last, code-last-1 ); e->o += code-last-1;
           memcpy( e->o, s_code, 6); e->o += 6;
@@ -329,42 +386,60 @@ void line( const char *st, int l, Encoder *e ) {
           p += 1;
           last = p;
         } else {
+          if ( bold ) bold = NULL;
+          if ( strike ) strike = NULL;
           p += 1;
           code = p;
         } 
       }
-      else if ( p[0] == '<' ) {
-        //opentag = p;
-        //memcpy( e->o, last, bold-last-2 ); e->o += bold-last-2;
-        p++;
-      } else {
-        p++;
-      }
-      //memcpy( e->o, st, p-st ); e->o += p-st;
-    } else {
-      //printf(" not found end-p is %d\n", (int)(end-p));
-      while ( p++ < end ) {
-        if ( p[0] == '*' ) {
-        }
-      }
-      
-      //memcpy( e->o, st, p-st ); e->o += p-st;
-    }
+//  [test](http://alink.com)
+//  <a href="http://alink.com">test</a>
+
+      else if ( p[0] == ']' ) {
+        if ( 0 ) { //CHAR8_LONG(']', '(', 'h','t','t','p',':','/') == *((unsigned long *)(p)) ) {
+          char *label = p;
+          while ( label > last ) { if ( *label-- == '[' ) break; }
+          if ( label != last ) { 
+            label += 1;
+            //printf(" label >%.*s<\n", p-label, label );
+            char *link_end = p;
+            while ( link_end < end ) { if ( *link_end++ == ')' ) break; }
+            if ( link_end != end ) { 
+              link_end -= 2;
+              //printf(" link >%.*s<\n", link_end-p, p );
+
+              memcpy( e->o, last, label-last ); e->o += label-last; 
+              memcpy( e->o, "<a href=\"", 9 ); e->o += 9;
+              memcpy( e->o, p+2, link_end-p-1); e->o += link_end-p-1;
+              memcpy( e->o, "\">test</a>", 10 ); e->o += 10;
+              p = link_end+2;
+              last = p;
   
+            }
+          
+          }
+        }
+        p++;
+  
+      }
+
+      else {
+        p++;
+      }
+      //memcpy( e->o, st, p-st ); e->o += p-st;
+    } 
   } 
-  //printf("last to end? %d >%.*s<\n", (int)(end-last), end-last, last);
   memcpy( e->o, last, end-last ); e->o += end-last;
-  //printf("done?\n");
 }
 
 PyObject *_render( PyObject *md, Encoder *e ) {
-
-  //resizeBufferIfNeeded(e,2048);
 
   Py_ssize_t l;
   const char *p = PyUnicode_AsUTF8AndSize(md, &l);
   const char *end = p+l;
   int found;
+
+  resizeBufferIfNeeded( e, l );
 
   int bq = 0;
   int para = 0;
@@ -469,34 +544,13 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
       if ( found ) {
-        //printf("fnd line\n");
         line( st, p-st, e );
-        //memcpy( e->o, st, p-st ); e->o += p-st;
-      } else {
-        //printf("not fnd line\n");
-        while ( p < end && *p++ != '\n' );
-        line( st, p-st, e );
-        //printf("after line\n");
-        //memcpy( e->o, st, p-st ); e->o += p-st;
-        if ( p>=end) {
-
-          if ( para ) {
-            *((uint64_t *)e->o) = s_end_para;
-            e->o += 5;
-          }
-          if ( bq ) {
-            e->o -= 1;
-            memcpy( e->o, s_end_bq, 14 ); e->o += 14;
-          }
-        }
-        //return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
-      }
+      } 
 
     }
 
     p += 1;
     sameline = 0;
-    //while ( p < end && *p++ == '\n' );
     
   }
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  

@@ -4,13 +4,13 @@
 #define STRINGIFY(x) XSTRINGIFY(x)
 #define XSTRINGIFY(x) #x
 
-//PyObject* setup   (PyObject* self, PyObject *args, PyObject *kwargs);
+PyObject* setup   (PyObject* self, PyObject *args, PyObject *kwargs);
 PyObject* render  (PyObject* self, PyObject *md);
 PyObject* html    (PyObject* self, PyObject *htm);
 
 
 static PyMethodDef mrfastmarkMethods[] = {
-  //{"setup",  (PyCFunction) setup,   METH_VARARGS | METH_KEYWORDS, "Setup the renderer"   },
+  {"setup",  (PyCFunction) setup,   METH_VARARGS | METH_KEYWORDS, "Setup the renderer"   },
   {"render", (PyCFunction) render,  METH_O,                       "Render fastmark into html"   },
   {"html",   (PyCFunction) html,    METH_O,                       "Change html back into fastmark" },
   {NULL, NULL, 0, NULL}       /* Sentinel */
