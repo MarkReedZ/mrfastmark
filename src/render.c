@@ -479,7 +479,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
 
       *((unsigned int*)e->o) = s_h1;
       e->o += 4;
-
+      p += 2;
       const char *st = p;
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
@@ -491,7 +491,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       }
 
       *((uint64_t *)e->o) = s_end_h1;
-      e->o += 7;
+      e->o += 6;
                  
     }
     else if ( p[0] == '>' ) {
@@ -529,7 +529,6 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     }
     else {
 
-        //printf("else line\n");
       //if ( !bq ) {
       if ( para == 0 ) {
         *((unsigned int*)e->o) = s_para;
@@ -543,16 +542,26 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       const char *st = p;
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+      printf("p %p\n",p);
+      printf("e %p\n",end);
       if ( found ) {
         line( st, p-st, e );
       } 
+      else if ( p == end ) {
+        line( st, p-st, e );
+        if ( para ) {
+          *((uint64_t *)e->o) = s_end_para;
+          e->o += 5;
+        }
+      }
 
     }
 
     p += 1;
     sameline = 0;
-    
   }
+
+
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
 }
 
