@@ -472,7 +472,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     
 
     if ( p[0] == '\n' ) {
-      printf("blank line\n");
+      //printf("blank line\n");
       if ( para ) {
         *((uint64_t *)e->o) = s_end_para;
         e->o += 5;
@@ -574,6 +574,11 @@ PyObject *_render( PyObject *md, Encoder *e ) {
   if ( para ) {
     *((uint64_t *)e->o) = s_end_para;
     e->o += 5;
+  }
+  if ( bq ) {
+    if ( para ) e->o -= 1;
+    memcpy( e->o, s_end_bq, 14 ); e->o += 14;
+    //*(e->o) = '\n'; e->o += 1;
   }
 
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
