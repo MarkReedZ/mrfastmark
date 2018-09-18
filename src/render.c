@@ -542,8 +542,6 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       const char *st = p;
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
-      printf("p %p\n",p);
-      printf("e %p\n",end);
       if ( found ) {
         line( st, p-st, e );
       } 
