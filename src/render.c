@@ -154,8 +154,7 @@ static char s_bq[16] = "<blockquote>\n";
 static char s_end_bq[16] = "\n</blockquote>";
 
 // <a href="http://you.czm">http://you.czm</a>
-static char s_http[16] = "<a href=\"http://"; // 16
-static char s_mid_http[16] = "\">http://"; // 9
+static char s_http[16] = "<a href=\""; // 9
 static char s_end_http[16] = "</a>"; // 4
 
 static char stripbuf[16*1024];
@@ -299,26 +298,35 @@ void line( const char *st, int l, Encoder *e ) {
       if ( p[0] == ':' ) {
 
         // http://
-        if ( p[1] == '/' && (p-e->start) > 4 && *((uint32_t*)(p-4)) == CHAR4_INT('h','t','t','p') && p[2] == '/' ) {
-          p += 3;
-          char *linkstart = p; 
-          while ( p < end && !(*p == '.' || *p == ' ' || *p == '\n') ) p++;
-
-          if ( p[0] == '.' ) {
-            while ( p < end && *p != ' ' && *p != '\n' ) p++;
-            //printf(" link >%.*s<\n", p-linkstart, linkstart );            
-            
-            memcpy( e->o, last, linkstart-last-7 ); e->o += linkstart-last-7;
-            memcpy( e->o, s_http, 16); e->o += 16;
-              memcpy( e->o, linkstart, p-linkstart); e->o += p-linkstart;
-            memcpy( e->o, s_mid_http, 9); e->o += 9;
-              memcpy( e->o, linkstart, p-linkstart); e->o += p-linkstart;
-            memcpy( e->o, s_end_http, 4); e->o += 4;
-            last = p;
-          } else {
-            p++;
+        if ( p[1] == '/' && p[2] == '/' && (p-e->start) > 4 ) { 
+          char *linkstart = NULL;
+          if ( *((uint32_t*)(p-4)) == CHAR4_INT('h','t','t','p') ) {
+            linkstart = p - 4; 
+          } else if ( *((uint32_t*)(p-4)) == CHAR4_INT('t','t','p','s') ) {
+            linkstart = p - 5; 
           }
-             
+          if ( linkstart ) {
+            p += 3;
+            while ( p < end && !(*p == '.' || *p == ' ' || *p == '\n') ) p++;
+  
+            if ( p[0] == '.' ) {
+              while ( p < end && *p != ' ' && *p != '\n' ) p++;
+              //printf(" link >%.*s<\n", p-linkstart, linkstart );            
+              
+              memcpy( e->o, last, linkstart-last ); e->o += linkstart-last;
+              memcpy( e->o, s_http, 9); e->o += 9;
+                memcpy( e->o, linkstart, p-linkstart); e->o += p-linkstart;
+              *(e->o++) = '"';
+              *(e->o++) = '>';
+                memcpy( e->o, linkstart, p-linkstart); e->o += p-linkstart;
+              memcpy( e->o, s_end_http, 4); e->o += 4;
+              last = p;
+              
+            } else {
+              p++;
+            }
+
+          }
         } else {
           p++;
         }
@@ -396,22 +404,30 @@ void line( const char *st, int l, Encoder *e ) {
 //  <a href="http://alink.com">test</a>
 
       else if ( p[0] == ']' ) {
-        if ( 0 ) { //CHAR8_LONG(']', '(', 'h','t','t','p',':','/') == *((unsigned long *)(p)) ) {
+        
+        if ( CHAR8_LONG(']', '(', 'h','t','t','p','s',':') == *((unsigned long *)(p)) ||
+             CHAR8_LONG(']', '(', 'h','t','t','p',':','/') == *((unsigned long *)(p)) ) {
           char *label = p;
-          while ( label > last ) { if ( *label-- == '[' ) break; }
+          while ( --label > last &&  *label != '[' );
           if ( label != last ) { 
             label += 1;
             //printf(" label >%.*s<\n", p-label, label );
             char *link_end = p;
-            while ( link_end < end ) { if ( *link_end++ == ')' ) break; }
+            while ( ++link_end < end && *link_end != ')' );
             if ( link_end != end ) { 
-              link_end -= 2;
+              link_end -= 1;
               //printf(" link >%.*s<\n", link_end-p, p );
 
-              memcpy( e->o, last, label-last ); e->o += label-last; 
+              memcpy( e->o, last, label-last-1 ); e->o += label-last-1; 
               memcpy( e->o, "<a href=\"", 9 ); e->o += 9;
               memcpy( e->o, p+2, link_end-p-1); e->o += link_end-p-1;
-              memcpy( e->o, "\">test</a>", 10 ); e->o += 10;
+              *(e->o++) = '"';
+              *(e->o++) = '>';
+              memcpy( e->o, label, p-label ); e->o += p-label;
+              *(e->o++) = '<';
+              *(e->o++) = '/';
+              *(e->o++) = 'a';
+              *(e->o++) = '>';
               p = link_end+2;
               last = p;
   
@@ -456,7 +472,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     
 
     if ( p[0] == '\n' ) {
-      //printf("blank line\n");
+      printf("blank line\n");
       if ( para ) {
         *((uint64_t *)e->o) = s_end_para;
         e->o += 5;
@@ -547,10 +563,6 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       } 
       else if ( p == end ) {
         line( st, p-st, e );
-        if ( para ) {
-          *((uint64_t *)e->o) = s_end_para;
-          e->o += 5;
-        }
       }
 
     }
@@ -559,6 +571,10 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     sameline = 0;
   }
 
+  if ( para ) {
+    *((uint64_t *)e->o) = s_end_para;
+    e->o += 5;
+  }
 
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
 }
