@@ -60,6 +60,19 @@ tsts =[
   [ ">test\nalso quoted","<blockquote>\x0a<p>test\x0aalso quoted</p>\x0a</blockquote>" ],
   [ ">test\nalso quoted\n\nNot","<blockquote>\x0a<p>test\x0aalso quoted</p>\x0a</blockquote>\x0a<p>Not</p>\x0a" ],
 
+  # Lists
+  [ "1. one\x0a2. two\x0a3. three", "<ol>\x0a<li><p>one</p>\x0a</li>\x0a<li><p>two</p>\x0a</li>\x0a<li><p>three</p>\x0a</li>\x0a</ol>\x0a" ],
+  [ "- one\x0a- two\x0a- three", "<ul>\x0a<li><p>one</p>\x0a</li>\x0a<li><p>two</p>\x0a</li>\x0a<li><p>three</p>\x0a</li>\x0a</ul>\x0a" ],
+  # TODO more
+
+  # Code block
+  [ "```\x0a- one\x0a- two\x0a- three\x0a```", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
+  [ "Albert\x0a```\x0a- one\x0a- two\x0a- three\x0a```Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
+  [ "foo\x0a```\x0abar\x0a```\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
+  [ "~~~\x0a- one\x0a- two\x0a- three\x0a~~~", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
+  [ "Albert\x0a~~~\x0a- one\x0a- two\x0a- three\x0a~~~Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
+  [ "foo\x0a~~~\x0abar\x0a~~~\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
+
 ]
 
 for t in tsts:

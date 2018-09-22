@@ -460,6 +460,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
   int bq = 0;
   int para = 0;
   int sameline = 0;
+  int list = 0;
 
 // > dd
 // >
@@ -525,23 +526,104 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       } 
       continue;
     }
-    else if ( (p[1] == '.' || p[1] == ')') && _isdigit(p[0]) && p[2] == ' ' ) {
-      p++;
-      //ol = 1
-      //p += 2
-// 1. xx 
-// 2. yy
-// 3. zz
+    else if ( (p[0] == '-' || p[0] == '*') && p[1] == ' ' ) {  
+      if ( para ) { 
+        *((uint64_t *)e->o) = s_end_para;
+        e->o += 5;
+        para = 0;
+      }
+      p += 1;
+      if ( list == 0 ) {
+        list = 2;
+        *(e->o++) = '<'; *(e->o++) = 'u'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+        *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
+      } else {
+        if ( bq ) {
+          bq = 0;
+          memcpy( e->o, s_end_bq, 14 ); e->o += 14;
+          *(e->o) = '\n'; e->o += 1;
+        }
+        *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+        *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
+      }
+    }
+    else if ( (p[1] == '.' || p[1] == ')') && _isdigit(p[0]) && p[2] == ' ' ) {  // '1. '
 
-// <ol>
-// <li>One</li>
-// <li>Two</li>
-// <li>Three</li>
-// </ol>
+      if ( para ) { 
+        *((uint64_t *)e->o) = s_end_para;
+        e->o += 5;
+        para = 0;
+      }
 
-      
-       
-    
+      p += 2;
+      if ( list == 0 ) {
+        list = 1;
+        *(e->o++) = '<'; *(e->o++) = 'o'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+        *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
+      } else {
+        if ( bq ) {
+          bq = 0;
+          memcpy( e->o, s_end_bq, 14 ); e->o += 14;
+          *(e->o) = '\n'; e->o += 1;
+        }
+        *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+        *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
+      }
+         
+    }
+    else if ( p[0] == '`' && p[1] == '`' && p[2] == '`'  ) {
+      //if ( precode == NULL ) {
+
+      if ( para ) { 
+        *((uint64_t *)e->o) = s_end_para;
+        e->o += 5;
+        para = 0;
+      }
+
+      // Scan to closing ``` and if not found we ignore
+
+      p += 4; 
+      const char *st = p;
+      static char ranges1[] = "``";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+      if ( found ) {
+        if ( p[-1] == '\n' && p[1] == '`' && p[2] == '`' ) {
+          memcpy( e->o, "<pre><code>", 11 ); e->o += 11;
+          memcpy( e->o, st, p-st ); e->o += p-st;
+          memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
+          p += 2;
+        }  
+      }
+
+      //} else {
+        //memcpy( e->o, "</code></pre>", 13 ); e->o += 13;
+      //}
+    }
+    else if ( p[0] == '~' && p[1] == '~' && p[2] == '~'  ) {
+      //if ( precode == NULL ) {
+
+      if ( para ) { 
+        *((uint64_t *)e->o) = s_end_para;
+        e->o += 5;
+        para = 0;
+      }
+
+      // Scan to closing ``` and if not found we ignore
+
+      p += 4; 
+      const char *st = p;
+      static char ranges1[] = "~~";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+      if ( found ) {
+        if ( p[-1] == '\n' && p[1] == '~' && p[2] == '~' ) {
+          memcpy( e->o, "<pre><code>", 11 ); e->o += 11;
+          memcpy( e->o, st, p-st ); e->o += p-st;
+          memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
+          p += 2;
+        }  
+      }
+    }
+    else if ( p[0] == ' ' && list ) {
     }
     else {
 
@@ -579,6 +661,14 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     if ( para ) e->o -= 1;
     memcpy( e->o, s_end_bq, 14 ); e->o += 14;
     //*(e->o) = '\n'; e->o += 1;
+  }
+  if ( list ) {
+    *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+    if ( list == 2 ) {
+      *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'u'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+    } else {
+      *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'o'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+    }
   }
 
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
