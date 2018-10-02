@@ -1,10 +1,13 @@
 
 usage in readme
 
+clean up tests
+Ampersand seg fault.  How to handle &; and such
+
 Allow nested tags by using a stack
 clean up the prints
 
-lists
 superscript
+```python = <code class=python>
 
 resize line buffers instead of max 16k single line

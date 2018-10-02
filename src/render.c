@@ -5,6 +5,8 @@
 
 #include "setup.h"
 
+#define DBG if(0)
+
 #ifdef __AVX2__
 #include <immintrin.h>
 #elif defined __SSE4_2__
@@ -34,19 +36,19 @@
 
 static inline bool _isdigit(char c) { return c >= '0' && c <= '9'; }
 
+static __inline__ uint64_t rdtsc(void)
+{
+  unsigned long long int x;
+     __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
+     return x;
+}
+
 
 typedef struct _encoder
 {
   char *start, *end, *o;
   char *last; 
 } Encoder;
-
-//static void print_buffer( char* b, int len ) {
-  //for ( int z = 0; z < len; z++ ) {
-    //printf( "%02x ",(int)b[z]);
-  //}
-  //printf("\n");
-//}
 
 static int SetError(const char *message)
 {
@@ -128,28 +130,18 @@ static char *findchar_fast(char *buf, char *buf_end, char *ranges, size_t ranges
     return buf;
 }
 
-//static const char *get_token_to_eol(const char *buf, const char *buf_end, const char **token, size_t *token_len, int *ret)
-//{
-  //char *end = path + length;
-  //pat = findchar_fast(pat, end, ranges1, sizeof(ranges1) - 1, &found);
-//
-    //return buf;
-//}
-//
 
-static uint32_t s_h1 = 0x3e31683c;
-static uint64_t s_end_h1 = 0x0a0a3e31682f3c;
+//static uint32_t s_h1 = 0x3e31683c;
+//static uint64_t s_end_h1 = 0x0a0a3e31682f3c;
 static uint32_t s_para = 0x203e703c; // <p>
 static uint64_t s_end_para = 0x0000000a3e702f3c; // </p>\x0a
 
 static char s_code[16]     = "<code>";
 static char s_end_code[16] = "</code>";
-static char s_strong[16]     = "<strong>";
-static char s_end_strong[16] = "</strong>";
-static char s_em[16]     = "<em>";
-static char s_end_em[16] = "</em>";
-static char s_strike[16]     = "<s>";
-static char s_end_strike[16] = "</s>";
+//static char s_strong[16]     = "<strong>";
+//static char s_end_strong[16] = "</strong>";
+//static char s_strike[16]     = "<s>";
+//static char s_end_strike[16] = "</s>";
 static char s_bq[16] = "<blockquote>\n";
 static char s_end_bq[16] = "\n</blockquote>";
 
@@ -191,10 +183,6 @@ int striphtml( const char *st, int l, Encoder *e ) {
         }
       }
     } 
-    //else {
-      //while ( p++ < end ) {
-      //}
-    //}
   }
 
   memcpy( o, last, end-last ); o += end-last;
@@ -211,10 +199,8 @@ int escape( const char *st, int l, Encoder *e ) {
   static char ranges1[] = "<<" ">>" "\x22\x22" "&&";
 
   while ( p < end ) {
-    //printf("escepe loop %c\n",*p);
     p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
     if ( found ) {
-      //printf("found\n");
       if ( p[0] == '<' ) {
         memcpy( o, last, p-last ); o += p-last;
         memcpy( o, "&lt;", 4); o += 4;
@@ -240,27 +226,21 @@ int escape( const char *st, int l, Encoder *e ) {
         last = p;
       }
     } 
-    //else {
-      //printf(" end - p %d\n", end-p);
-      //p++;
-    //}
-
   }
 
   memcpy( o, last, end-last ); o += end-last;
   return (int)(o-escbuf);
 }
 
-static char *em = NULL;
-static char *bold = NULL;
-static char *emph = NULL;
-static char *strike = NULL;
-static char *code = NULL;
 
 void line( const char *st, int l, Encoder *e ) {
 
-  //memcpy( e->o, st, l ); e->o += l;
-  //return;
+  char *em = NULL;
+  char *bold = NULL;
+  char *emph = NULL;
+  char *strike = NULL;
+  char *code = NULL;
+  bool escapechar = false;
 
   if ( strip_html_tags ) {
     l = striphtml( st, l , e );
@@ -272,33 +252,29 @@ void line( const char *st, int l, Encoder *e ) {
     st = escbuf;
   }
 
-  //printf("After escape l is %d >%.*s<\n",l,l, st);
+  DBG printf("After escape l is %d >%.*s<\n",l,l, st);
 
   int found;
-  //printf(" l %d\n",l);
 
   const char *p = st;
   const char *end = st+l;
   const char *last = st;
-  //printf("A\n");
 
-  // TODO Do this properly - right now we don't allow nested tags
+  // TODO Do this properly? right now we don't allow nested tags
   // Keep a stack of objects
   // At end of line we walk the stack writing to the output
   // Unclosed tags are left in  **  `  `  **  **
 
-  // Right now we don't allow nesting
   while ( p < end ) {
-    //printf("line loop %c\n",*p);
-    static char ranges1[] = "**" "::" "\x00\x00" "``" "~~" "]]";
+    DBG printf("line loop %p\n",p);
+    static char ranges1[] = "**" "::" "\x00\x00" "``" "~~" "]]" "\\\\";
     p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
-    //printf("YAY\n");
     if ( found ) {
-      //printf( " found >%.*s<\n", 2, p );
-      if ( p[0] == ':' ) {
+      DBG printf( " found >%.*s< p %p\n", 2, p,p );
 
+      if ( p[0] == ':' && !code ) {
         // http://
-        if ( p[1] == '/' && p[2] == '/' && (p-e->start) > 4 ) { 
+        if ( p[1] == '/' && p[2] == '/' && (p-st) > 4 ) { 
           char *linkstart = NULL;
           if ( *((uint32_t*)(p-4)) == CHAR4_INT('h','t','t','p') ) {
             linkstart = p - 4; 
@@ -311,7 +287,6 @@ void line( const char *st, int l, Encoder *e ) {
   
             if ( p[0] == '.' ) {
               while ( p < end && *p != ' ' && *p != '\n' ) p++;
-              //printf(" link >%.*s<\n", p-linkstart, linkstart );            
               
               memcpy( e->o, last, linkstart-last ); e->o += linkstart-last;
               memcpy( e->o, s_http, 9); e->o += 9;
@@ -326,6 +301,8 @@ void line( const char *st, int l, Encoder *e ) {
               p++;
             }
 
+          } else {
+            p++;
           }
         } else {
           p++;
@@ -334,30 +311,60 @@ void line( const char *st, int l, Encoder *e ) {
       else if ( p[0] == '*' && !code) {
         if ( p[1] == '*' ) {
           if ( bold ) {
-            memcpy( e->o, last, bold-last-2 ); e->o += bold-last-2;
-            memcpy( e->o, s_strong, 8); e->o += 8;
-            memcpy( e->o, bold, p-bold ); e->o += p-bold;
-            memcpy( e->o, s_end_strong, 9); e->o += 9;
+            DBG printf("Writing bold out bold %p last %p\n",bold,last);
+            DBG printf(" bold-last %d\n", (int)(bold-last));
+            if ( bold-last > 2 ) {
+              memcpy( e->o, last, bold-last-2 ); e->o += bold-last-2;
+            }
+            memcpy( e->o, "<strong>", 8); e->o += 8;
+            if ( !escapechar ) {
+              memcpy( e->o, bold, p-bold ); e->o += p-bold;
+            } else {
+              escapechar = false;
+              char *tmp = bold; 
+              while (tmp < p) {
+                if ( *tmp != '\\' ) *(e->o++) = *tmp;
+                tmp += 1;
+              }
+            }
+            memcpy( e->o, "</strong>", 9); e->o += 9;
             bold = NULL;
             p += 2;
             last = p;
           } else {
+            DBG printf("bold start\n");
             //if ( strike ) strike = NULL;
             //if ( emph ) emph = NULL;
+
             p += 2;
             if ( !strike && !emph ) bold = p;
             //printf( " before >%.*s<\n", (int)(bold-last), last );
           }
         } else {
           if ( emph ) {
-            memcpy( e->o, last, emph-last-2 ); e->o += emph-last-2;
-            memcpy( e->o, s_em, 4); e->o += 4;
-            memcpy( e->o, emph, p-emph ); e->o += p-emph;
-            memcpy( e->o, s_end_em, 5); e->o += 5;
+            DBG printf("Writing emph out emph %p last %p\n",emph,last);
+            if ( emph-last > 2 ) {
+              memcpy( e->o, last, emph-last-2 ); e->o += emph-last-2;
+            }
+
+            memcpy( e->o, "<em>", 4); e->o += 4;
+            if ( !escapechar ) {
+              memcpy( e->o, emph, p-emph ); e->o += p-emph;
+            } else {
+              escapechar = false;
+              char *tmp = emph; 
+              while (tmp < p) {
+                if ( *tmp != '\\' ) *(e->o++) = *tmp;
+                tmp += 1;
+              }
+            }
+            memcpy( e->o, "</em>", 5); e->o += 5;
             emph = NULL;
             p += 1;
             last = p;
+            DBG printf("Wrote emph out\n");
           } else {
+            DBG printf("emph start\n");
             //if ( bold ) bold = NULL;
             //if ( strike ) strike = NULL;
             p += 1;
@@ -370,21 +377,38 @@ void line( const char *st, int l, Encoder *e ) {
       else if ( p[0] == '~' && p[1] == '~' && !code && !bold && !emph) {
         if ( strike ) {
           memcpy( e->o, last, strike-last-2 ); e->o += strike-last-2;
-          memcpy( e->o, s_strike, 3); e->o += 3;
-          memcpy( e->o, strike, p-strike ); e->o += p-strike;
-          memcpy( e->o, s_end_strike, 4); e->o += 4;
+          memcpy( e->o, "<s>", 3); e->o += 3;
+            if ( !escapechar ) {
+              memcpy( e->o, strike, p-strike ); e->o += p-strike;
+            } else {
+              escapechar = false;
+              char *tmp = strike; 
+              while (tmp < p) {
+                if ( *tmp != '\\' ) *(e->o++) = *tmp;
+                tmp += 1;
+              }
+            }
+          memcpy( e->o, "</s>", 4); e->o += 4;
           strike = NULL;
           p += 2;
           last = p;
         } else {
           p += 2;
           strike = p;
-          //printf( " before >%.*s<\n", (int)(bold-last), last );
         }
       }
-
+      else if ( p[0] == '\\' && (p[1] == '*' || p[1] == '_' || p[1] == '`') ) { // && !code ) {
+        if ( emph || bold || strike ) {
+          escapechar = true;
+          p += 2; 
+        } else {
+          memcpy( e->o, last, p-last ); e->o += p-last;
+          *(e->o++) = p[1];
+          p += 2; 
+          last = p;
+        }
+      }
       else if ( p[0] == 0x60 ) { //'`' ) {
-        //printf("code tick\n");
         if ( code ) {
           memcpy( e->o, last, code-last-1 ); e->o += code-last-1;
           memcpy( e->o, s_code, 6); e->o += 6;
@@ -394,6 +418,7 @@ void line( const char *st, int l, Encoder *e ) {
           p += 1;
           last = p;
         } else {
+          if ( emph ) emph = NULL;
           if ( bold ) bold = NULL;
           if ( strike ) strike = NULL;
           p += 1;
@@ -403,8 +428,7 @@ void line( const char *st, int l, Encoder *e ) {
 //  [test](http://alink.com)
 //  <a href="http://alink.com">test</a>
 
-      else if ( p[0] == ']' ) {
-        
+      else if ( p[0] == ']' && !code ) {
         if ( CHAR8_LONG(']', '(', 'h','t','t','p','s',':') == *((unsigned long *)(p)) ||
              CHAR8_LONG(']', '(', 'h','t','t','p',':','/') == *((unsigned long *)(p)) ) {
           char *label = p;
@@ -424,7 +448,7 @@ void line( const char *st, int l, Encoder *e ) {
               *(e->o++) = '"';
               *(e->o++) = '>';
               memcpy( e->o, label, p-label ); e->o += p-label;
-              *(e->o++) = '<';
+              *(e->o++) = '<'; // TODO uint32 * this
               *(e->o++) = '/';
               *(e->o++) = 'a';
               *(e->o++) = '>';
@@ -445,7 +469,10 @@ void line( const char *st, int l, Encoder *e ) {
       //memcpy( e->o, st, p-st ); e->o += p-st;
     } 
   } 
-  memcpy( e->o, last, end-last ); e->o += end-last;
+  DBG printf( "end-last %d\n", (int)(end-last) );
+  if ( end-last > 0 ) {
+    memcpy( e->o, last, end-last ); e->o += end-last;
+  }
 }
 
 PyObject *_render( PyObject *md, Encoder *e ) {
@@ -462,18 +489,10 @@ PyObject *_render( PyObject *md, Encoder *e ) {
   int sameline = 0;
   int list = 0;
 
-// > dd
-// >
-// > zz
-
-
-
   while ( p < end ) {
     //printf("txt >%.*s<\n", 4, p);
-    
 
     if ( p[0] == '\n' ) {
-      //printf("blank line\n");
       if ( para ) {
         *((uint64_t *)e->o) = s_end_para;
         e->o += 5;
@@ -488,15 +507,29 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     }
     else if ( p[0] == '#' ) {
 
+  //unsigned long long start = rdtsc();
+  //printf("Cycles start %lld\n", start);
+      int num = 1;
+      char *zz = p+1;
+      while( *(zz++) == '#' ) num += 1;
+
       if ( para ) { 
-        *((uint64_t *)e->o) = s_end_para;
-        e->o += 5;
+        //*((uint64_t *)e->o) = s_end_para; e->o += 5;
+        memcpy( e->o, "</p>\n", 5 ); e->o += 5;
         para = 0;
       }
 
-      *((unsigned int*)e->o) = s_h1;
-      e->o += 4;
-      p += 2;
+      //*((unsigned int*)e->o) = s_h1; e->o += 4;
+
+      switch (num) {
+        case 1: memcpy( e->o, "<h1>", 4 ); e->o += 4; break;
+        case 2: memcpy( e->o, "<h2>", 4 ); e->o += 4; break;
+        case 3: memcpy( e->o, "<h3>", 4 ); e->o += 4; break;
+        case 4: memcpy( e->o, "<h4>", 4 ); e->o += 4; break;
+        case 5: memcpy( e->o, "<h5>", 4 ); e->o += 4; break;
+      }
+
+      p += 1+num;
       const char *st = p;
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
@@ -507,8 +540,19 @@ PyObject *_render( PyObject *md, Encoder *e ) {
         memcpy( e->o, st, p-st ); e->o += p-st;
       }
 
-      *((uint64_t *)e->o) = s_end_h1;
-      e->o += 6;
+      //*((uint64_t *)e->o) = s_end_h1;
+      //e->o += 6;
+      //memcpy( e->o, "</h1>\n", 6 ); e->o += 6;
+      switch (num) {
+        case 1: memcpy( e->o, "</h1>\n", 6 ); e->o += 6; break;
+        case 2: memcpy( e->o, "</h2>\n", 6 ); e->o += 6; break;
+        case 3: memcpy( e->o, "</h3>\n", 6 ); e->o += 6; break;
+        case 4: memcpy( e->o, "</h4>\n", 6 ); e->o += 6; break;
+        case 5: memcpy( e->o, "</h5>\n", 6 ); e->o += 6; break;
+      }
+      //unsigned long long end = rdtsc();
+      //printf("Cycles end %lld\n", end);
+      //printf("Cycles spent is %lld\n", (uint64_t)end-start);
                  
     }
     else if ( p[0] == '>' ) {
@@ -571,7 +615,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       }
          
     }
-    else if ( p[0] == '`' && p[1] == '`' && p[2] == '`'  ) {
+    else if ( p[0] == '`' && p[1] == '`' && p[2] == '`' ) { // && p[3] == '\x0a'  ) {
       //if ( precode == NULL ) {
 
       if ( para ) { 
@@ -593,11 +637,10 @@ PyObject *_render( PyObject *md, Encoder *e ) {
           memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
           p += 2;
         }  
+      } else {
+        p = st-1;
       }
 
-      //} else {
-        //memcpy( e->o, "</code></pre>", 13 ); e->o += 13;
-      //}
     }
     else if ( p[0] == '~' && p[1] == '~' && p[2] == '~'  ) {
       //if ( precode == NULL ) {
@@ -622,6 +665,22 @@ PyObject *_render( PyObject *md, Encoder *e ) {
           p += 2;
         }  
       }
+    }
+// TODO Only do one hr method
+    else if ( p[0] == '*' && p[1] == '*' && p[2] == '*'  ) {
+      memcpy( e->o, "<hr>\x0a", 5); e->o += 5;
+      static char ranges1[] = "\x0a\x0a";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+    }
+    else if ( p[0] == '-' && p[1] == '-' && p[2] == '-'  ) {
+      memcpy( e->o, "<hr>\x0a", 5); e->o += 5;
+      static char ranges1[] = "\x0a\x0a";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+    }
+    else if ( p[0] == '_' && p[1] == '_' && p[2] == '_'  ) {
+      memcpy( e->o, "<hr>\x0a", 5); e->o += 5;
+      static char ranges1[] = "\x0a\x0a";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
     }
     else if ( p[0] == ' ' && list ) {
     }
@@ -663,6 +722,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
     //*(e->o) = '\n'; e->o += 1;
   }
   if ( list ) {
+    // TODO uint64 * this
     *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
     if ( list == 2 ) {
       *(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'u'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
@@ -689,7 +749,14 @@ PyObject* render(PyObject* self, PyObject *md) {
   enc.end   = s + len;
   enc.o = s;
 
-  return _render(md, &enc);
+  PyObject *ret = _render(md, &enc);
+  //unsigned long long start = rdtsc();
+  //printf("Cycles start %lld\n", start);
+  //unsigned long long end = rdtsc();
+  //printf("Cycles end %lld\n", end);
+  //printf("Cycles spent is %lld\n", (uint64_t)end-start);
+  free(s);
+  return ret;
  
 }
 

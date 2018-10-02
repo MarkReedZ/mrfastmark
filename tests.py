@@ -29,7 +29,7 @@ def eq( a, b, o ):
   if a != b:
     cf = inspect.currentframe()
     print( "ERROR Line", cf.f_back.f_lineno, a, "!=", b )
-    #print( "mistletoe:", mistletoe.markdown(o) )
+    print( "mistletoe:", mistletoe.markdown(o) )
     print( "mistune:", mis(o) )
     pbuf(a)
     pbuf(b)
@@ -52,6 +52,7 @@ tsts =[
   [ "This is a link https://github.com/MarkReedZ/mrfastmark", "<p>This is a link <a href=\"https://github.com/MarkReedZ/mrfastmark\">https://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "This is a link http://github.com/MarkReedZ/mrfastmark\x0a\x0a", "<p>This is a link <a href=\"http://github.com/MarkReedZ/mrfastmark\">http://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "This is a link https://github.com/MarkReedZ/mrfastmark\x0a\x0a", "<p>This is a link <a href=\"https://github.com/MarkReedZ/mrfastmark\">https://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
+  [ "irc://foo.bar:2233/baz\x0a", "<p>irc://foo.bar:2233/baz</p>\x0a" ],
 
   # Double break after p?
   [ "<&\"z##", """<p>&lt;&amp;&quot;z##</p>\x0a"""],
@@ -66,12 +67,54 @@ tsts =[
   # TODO more
 
   # Code block
+  [ "``` no closer", "foo" ],
   [ "```\x0a- one\x0a- two\x0a- three\x0a```", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
   [ "Albert\x0a```\x0a- one\x0a- two\x0a- three\x0a```Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
   [ "foo\x0a```\x0abar\x0a```\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
   [ "~~~\x0a- one\x0a- two\x0a- three\x0a~~~", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
   [ "Albert\x0a~~~\x0a- one\x0a- two\x0a- three\x0a~~~Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
   [ "foo\x0a~~~\x0abar\x0a~~~\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
+
+  [ "*	*	*	\x0a", "<p><em>	</em>	*	</p>\x0a" ],
+  [ "***\x0a---\x0a___\x0a", "<hr>\x0a<hr>\x0a<hr>\x0a" ],
+  [ " ***\x0a  ***\x0a   ***\x0a", "<p> <strong></strong>\x0a  ***\x0a   ***</p>\x0a" ],
+
+
+  # Image hotlinks not supported
+  [ "[![moon](moon.jpg)]", "<p>[![moon](moon.jpg)]</p>\x0a"],
+
+  # Unicode 
+  [ "Foo χρῆν\x0a","<p>Foo χρῆν</p>\x0a" ],
+  [ "快点好","<p>快点好</p>\x0a"],
+
+  [ "foo\\x0a","<p>foo\\x0a</p>\x0a" ],
+  [ "foo  \x0a","<p>foo  </p>\x0a" ],
+  [ "### foo\\x0a","<h3>foo\\x0a</h3>\x0a" ],
+  [ "### foo  \x0a","<h3>foo  </h3>\x0a" ],
+  [ "foo\x0abaz\x0a","<p>foo\x0abaz</p>\x0a" ],
+  [ "foo \x0a baz\x0a","<p>foo \x0a baz</p>\x0a" ],
+  [ "hello $.;'there\x0a","<p>hello $.;'there</p>\x0a" ],
+
+  # Nesting
+  [ "*a `*`*\x0a", "<p>*a <code>*</code>*</p>\x0a" ],
+  [ "**a `**`*testing\x0a", "<p>**a <code>**</code>*testing</p>\x0a" ],
+  [ "~~a `**~`~~testing\x0a", "<p>~~a <code>**~</code>~~testing</p>\x0a" ],
+  [ "~~testing [test](http://alink.com)~~\x0a", "<p>~~testing <a href=\"http://alink.com\">test</a>~~</p>\x0a" ],
+  [ "test `ing [test](http://alink.com)`\x0a", "<p>test <code>ing [test](http://alink.com)</code></p>\x0a" ],
+  [ "**\***", "<p><strong>*</strong></p>\x0a" ],
+
+  # Escaping
+  [ "\*\* do not bold this **","<p>** do not bold this **</p>\x0a" ],
+  [ "\* *this is bold\* *", "<p>*<em>this is bold* </em></p>\x0a" ],
+  [ "\**hello*\*",          "<p>*<em>hello</em>*</p>\x0a" ],
+  [ "*hello \* world*",     "<p><em>hello * world</em></p>\x0a"],
+  [ "**hello \* world**",   "<p><strong>hello * world</strong></p>\x0a"],
+  [ "`hello \` world`", "<p><code>hello ` world</code></p>\x0a"],
+  [ "&#X22; &#XD06; &#xcab;", "fart" ],
+
+#576 ><foo\+@bar.example.com>\x0a<
+#576 ><p>&lt;foo+@bar.example.com&gt;</p>\x0a<
+
 
 ]
 
