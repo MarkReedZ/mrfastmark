@@ -10,14 +10,14 @@ mis = mistune.Markdown()
 def raises( o, f, exc,details ):
   try:
     f(o)
-    if len(o) > 100: o = o[:100]
-    print("ERROR ", o, " didn't raise exception")
+    cf = inspect.currentframe()
+    print("ERROR line",cf.f_back.f_lineno,"didn't raise exception",str(exc))
   except Exception as e:
-    if len(o) > 100: o = o[:100]
+    cf = inspect.currentframe()
     if type(e) != exc:
-      print("ERROR",o," rose wrong exception",type(e),e)
+      print("ERROR line",cf.f_back.f_lineno,"rose the wrong exception",str(e))
     if str(e) != details:
-      print("ERROR",o," rose wrong exception details actual vs expected:\n",e,"\n",details)
+      print("ERROR line",cf.f_back.f_lineno,"raised an exception with the wrong details\nAct: ",str(e),"\nExp: ",details)
 
 def pbuf( b ):
   s = ""
@@ -110,7 +110,7 @@ tsts =[
   [ "*hello \* world*",     "<p><em>hello * world</em></p>\x0a"],
   [ "**hello \* world**",   "<p><strong>hello * world</strong></p>\x0a"],
   [ "`hello \` world`", "<p><code>hello ` world</code></p>\x0a"],
-  [ "&#X22; &#XD06; &#xcab;", "fart" ],
+  [ "&#X22; &#XD06; &#xcab;", "TODO" ],
 
 #576 ><foo\+@bar.example.com>\x0a<
 #576 ><p>&lt;foo+@bar.example.com&gt;</p>\x0a<

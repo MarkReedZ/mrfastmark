@@ -9,8 +9,8 @@ typedef struct _decoder
 } Decoder;
 
 
-static char    *sbuf;
-static uint32_t sbuf_len;
+//static char    *sbuf;
+//static uint32_t sbuf_len;
 
 //static void print_buffer( unsigned char* b, int len ) {
   //for ( int z = 0; z < len; z++ ) {
