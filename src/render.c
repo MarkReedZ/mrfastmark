@@ -1,4 +1,5 @@
 
+
 #include "py_defines.h"
 #include <stdio.h>
 #include <stdbool.h>
@@ -36,12 +37,23 @@
 
 static inline bool _isdigit(char c) { return c >= '0' && c <= '9'; }
 
+
+// Debug
 static __inline__ uint64_t rdtsc(void)
 {
   unsigned long long int x;
      __asm__ volatile (".byte 0x0f, 0x31" : "=A" (x));
      return x;
 }
+static void print_buffer( char* b, int len ) {
+  for ( int z = 0; z < len; z++ ) {
+    printf( "%02x ",(uint32_t)b[z]);
+    //printf( "%c",b[z]);
+  }
+  printf("\n");
+}
+// Debug
+
 
 
 typedef struct _encoder
@@ -191,7 +203,7 @@ int escape( char *st, int l, Encoder *e ) {
         p++;
         last = p;
       }
-      // TODO The browser renders the & stuff appropriately.  What do we need here?
+      // TODO The browser renders the & stuff appropriately.  What do we need to do here?
       if ( p[0] == '&' ) {
         memcpy( o, last, p-last ); 
         //printf("last: >%.*s<\n", p-last, o );
@@ -301,7 +313,7 @@ void line( char *st, int l, Encoder *e ) {
     l = rc;
     st = escbuf;
   }
-  DBG printf("After escape l is %d >          %.*s<  \n",l,l, st);
+  DBG printf("After escape l is %d >%.*s<  \n",l,l, st);
   DBG printf("After escape l is %d\n",l);
 
   int found;
@@ -447,7 +459,7 @@ void line( char *st, int l, Encoder *e ) {
           strike = p;
         }
       }
-      else if ( p[0] == '\\' && (p[1] == '*' || p[1] == '_' || p[1] == '`') ) { // && !code ) {
+      else if ( p[0] == '\\' && (p[1] == '*' || p[1] == '_' || p[1] == '`') && !code ) {
         if ( emph || bold || strike ) {
           escapechar = true;
           p += 2; 
@@ -475,15 +487,14 @@ void line( char *st, int l, Encoder *e ) {
           code = p;
         } 
       }
-//  [test](http://alink.com)
-//  <a href="http://alink.com">test</a>
 
+      //  [test](http://alink.com)  <a href="http://alink.com">test</a>
       else if ( p[0] == ']' && !code ) {
         if ( CHAR8_LONG(']', '(', 'h','t','t','p','s',':') == *((unsigned long *)(p)) ||
              CHAR8_LONG(']', '(', 'h','t','t','p',':','/') == *((unsigned long *)(p)) ) {
           char *label = p;
           while ( --label > last &&  *label != '[' );
-          if ( label != last ) { 
+          if ( *label == '[' ) { 
             label += 1;
             //printf(" label >%.*s<\n", p-label, label );
             char *link_end = p;
@@ -526,6 +537,8 @@ PyObject *_render( PyObject *md, Encoder *e ) {
 
   Py_ssize_t l;
   char *p = PyUnicode_AsUTF8AndSize(md, &l);
+  if ( p == NULL ) return NULL;
+  
   char *end = p+l;
   int found;
 
@@ -535,35 +548,76 @@ PyObject *_render( PyObject *md, Encoder *e ) {
   int para = 0;
   int sameline = 0;
   int list = 0;
+  int list_type = 0;
+
+  int handled = 1;
 
   while ( p < end ) {
-    //printf("txt >%.*s<\n", 4, p);
+    handled = 1;
+    //printf("top: ");
+    //(end-p) > 16 ?  print_buffer(p, 16) : print_buffer(p, end-p);
 
-    if ( p[0] == '\n' ) {
+    //if ( p[0] == '\n' ) {
+    if ( p[0] == 0x0a ) {
       if ( para ) {
         *((uint64_t *)e->o) = CHAR8_LONG('<','/','p','>',0x0a,0,0,0); e->o += 5;
       }
+      if ( list ) {
+        //*((uint64_t *)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,0,0); e->o += 6;
+        list = 0;
+        if ( list_type == 2 ) {
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', '<','/', 'u'); e->o += 8;
+          *(e->o++) = 'l'; *(e->o++) = '>';
+        } else {
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', '<','/', 'o'); e->o += 8;
+          *(e->o++) = 'l'; *(e->o++) = '>';
+        }
+      }
       if ( bq && !sameline) {
         if (para) e->o -= 1;
-        memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
+        while ( bq ) {
+          bq -= 1;
+          memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
+        }
         *(e->o) = '\n'; e->o += 1;
-        bq = 0;
       }
       para = 0;
     }
-    else if ( p[0] == '#' ) {
+    else if ( p[0] == '#' ) { // TODO Must have a space after.
 
-      int num = 1;
-      char *zz = p+1;
-      while( *(zz++) == '#' ) num += 1;
+      //printf("# >%.*s<\n", 8, p);
+      int num = 0;
+      while( *p == '#' ) { num += 1; p++; } // TODO end...
+
+      //printf("# num %d, >%.*s<\n", num, 4, p);
+      if ( *p != ' ' ) { 
+        p -= num;
+        if ( para == 0 ) {
+          *((unsigned int*)e->o) = CHAR4_INT('<','p','>','z');
+          e->o += 3;
+          para = 1;
+        } else {
+          *(e->o++) = '\n';
+        }
+  
+        char *st = p;
+        static char ranges1[] = "\x0a\x0a";
+        p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+        if ( found ) {
+          line( st, p-st, e );
+        }
+        else if ( p == end ) {
+          line( st, p-st, e );
+        }
+
+        continue; 
+      }
+      //printf("# num %d, >%.*s<\n", num, 4, p);
 
       if ( para ) { 
         *((uint64_t *)e->o) = CHAR8_LONG('<','/','p','>',0x0a,0,0,0); e->o += 5;
-        //memcpy( e->o, "</p>\n", 5 ); e->o += 5;
         para = 0;
       }
-
-      //*((unsigned int*)e->o) = s_h1; e->o += 4;
 
       switch (num) {
         case 1: memcpy( e->o, "<h1>", 4 ); e->o += 4; break;
@@ -571,9 +625,10 @@ PyObject *_render( PyObject *md, Encoder *e ) {
         case 3: memcpy( e->o, "<h3>", 4 ); e->o += 4; break;
         case 4: memcpy( e->o, "<h4>", 4 ); e->o += 4; break;
         case 5: memcpy( e->o, "<h5>", 4 ); e->o += 4; break;
+        case 6: memcpy( e->o, "<h6>", 4 ); e->o += 4; break;
       }
 
-      p += 1+num;
+      p += 1;
       char *st = p;
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
@@ -584,56 +639,125 @@ PyObject *_render( PyObject *md, Encoder *e ) {
         memcpy( e->o, st, p-st ); e->o += p-st;
       }
 
-      //*((uint64_t *)e->o) = s_end_h1;
-      //e->o += 6;
-      //memcpy( e->o, "</h1>\n", 6 ); e->o += 6;
       switch (num) {
         case 1: memcpy( e->o, "</h1>\n", 6 ); e->o += 6; break;
         case 2: memcpy( e->o, "</h2>\n", 6 ); e->o += 6; break;
         case 3: memcpy( e->o, "</h3>\n", 6 ); e->o += 6; break;
         case 4: memcpy( e->o, "</h4>\n", 6 ); e->o += 6; break;
         case 5: memcpy( e->o, "</h5>\n", 6 ); e->o += 6; break;
+        case 6: memcpy( e->o, "</h6>\n", 6 ); e->o += 6; break;
       }
                  
     }
     else if ( p[0] == '>' ) {
-      p++;
       sameline = 1;
+
+      int depth = 0;
+      while( p < end && *p == '>' ) { depth++; p++; }
  
-      if ( bq == 0 ) { 
+      if ( bq < depth ) { 
         if ( para ) {
           *((uint64_t *)e->o) = s_end_para;
           e->o += 5;
           para = 0;
         }
-        bq = 1;
+        bq = depth;
         memcpy( e->o, "<blockquote>\n", 13 ); e->o += 13;
       } 
+      //if ( bq < depth ) {
+        //bq = depth;
+        //memcpy( e->o, "<blockquote>\n", 13 ); e->o += 13;
+      //}
       continue;
     }
-    else if ( (p[0] == '-' || p[0] == '*') && p[1] == ' ' ) {  
-      if ( para ) { 
-        *((uint64_t *)e->o) = s_end_para;
-        e->o += 5;
-        para = 0;
-      }
+    // TODO get rid of the + ?
+    else if ( (p[0] == '-' || p[0] == '*' || p[0] == '+') && p[1] == ' ' ) {  
+      if ( para ) { *((uint64_t *)e->o) = s_end_para; e->o += 5; para = 0; }
+
       p += 1;
       if ( list == 0 ) {
-        list = 2;
+        list_type = 2;
+        list = 1;
         *((unsigned long*)e->o) = CHAR8_LONG('<','u','l','>',0x0a,'<','l','i'); e->o += 8;
-        //*(e->o++) = '<'; *(e->o++) = 'u'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A; *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; 
         *(e->o++) = '>';
       } else {
-        if ( bq ) {
-          bq = 0;
+        while ( bq ) {
+          bq -= 1;
           memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
           *(e->o) = '\n'; e->o += 1;
         }
-        *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,'<','l'); e->o += 8;
-        //*(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A; *(e->o++) = '<'; *(e->o++) = 'l'; 
-        *(e->o++) = 'i'; 
-        *(e->o++) = '>';
+        if ( list > 1 ) {
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,0,0); e->o += 6;
+          while ( list > 1 ) {
+            *((unsigned long*)e->o) = CHAR8_LONG('<','/','u','l','>','<','/','l'); e->o += 8;
+            *(e->o++) = 'i'; *(e->o++) = '>';
+            list -= 1;
+          }
+          *((unsigned int*)e->o) = CHAR4_INT('<','l','i','>'); e->o += 4;
+        } else {
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,'<','l'); e->o += 8;
+          *(e->o++) = 'i'; 
+          *(e->o++) = '>';
+      	}
       }
+      char *st = p;
+      static char ranges1[] = "\x0a\x0a";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+      if ( found ) {
+        line( st, p-st, e );
+      }
+      else if ( p == end ) {
+        line( st, p-st, e );
+        *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>','<','/','u'); e->o += 8;
+        *(e->o++) = 'l'; *(e->o++) = '>';
+        list = 0;
+      }
+    }
+    else if ( p[0] == ' ' && list ) {
+
+      printf("DELME nested list >%.*s<\n", 16, p );
+
+      // Nested lists
+      int depth = 1;
+      while( (p+1) < end && p[0] == ' ' && p[1] == ' ' ) { depth += 1; p+= 2; } 
+
+      //exit(-1);
+      if ( (p[0] == '-' || p[0] == '*' || p[0] == '+') ) {
+        printf("list %d depth %d\n",list,depth);
+
+        p += 1;
+        
+        if ( depth > list ) {
+          *((unsigned long*)e->o) = CHAR8_LONG(0x0a, '<','u','l','>','<','l','i'); e->o += 8;
+          *(e->o++) = '>';
+  
+        } else if ( depth < list ) {
+          // </li></ul><li>
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,'<','/'); e->o += 8;
+          *((unsigned long*)e->o) = CHAR8_LONG('u','l','>','<','/','l', 'i','>'); e->o += 8;
+          *((unsigned long*)e->o) = CHAR8_LONG('<','l','i','>',0,0,0,0); e->o += 4; //TODO
+  
+        } else {
+          *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,'<','l'); e->o += 8;
+          *(e->o++) = 'i'; 
+          *(e->o++) = '>';
+        }
+        list = depth;
+
+      } else {
+        *(e->o++) = ' '; 
+    	}
+
+        char *st = p;
+        static char ranges1[] = "\x0a\x0a";
+        p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+        if ( found ) {
+          line( st, p-st, e );
+        }
+        else if ( p == end ) {
+          line( st, p-st, e );
+        }
+      
     }
     else if ( (p[1] == '.' || p[1] == ')') && _isdigit(p[0]) && p[2] == ' ' ) {  // '1. '
 
@@ -646,19 +770,27 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       p += 2;
       if ( list == 0 ) {
         list = 1;
+        list_type = 1;
         *((unsigned long*)e->o) = CHAR8_LONG('<','o','l','>',0x0a,'<','l','i'); e->o += 8;
         *(e->o++) = '>';
-        //*(e->o++) = '<'; *(e->o++) = 'o'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A; *(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
       } else {
-        if ( bq ) {
-          bq = 0;
+        while ( bq ) {
+          bq -= 1;
           memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
           *(e->o) = '\n'; e->o += 1;
         }
         *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,'<','l'); e->o += 8;
         *(e->o++) = 'i'; *(e->o++) = '>';
-        //*(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
-        //*(e->o++) = '<'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>';
+      }
+
+      char *st = p;
+      static char ranges1[] = "\x0a\x0a";
+      p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
+      if ( found ) {
+        line( st, p-st, e );
+      }
+      else if ( p == end ) {
+        line( st, p-st, e );
       }
          
     }
@@ -670,18 +802,34 @@ PyObject *_render( PyObject *md, Encoder *e ) {
         e->o += 5;
         para = 0;
       }
-
+      // Grab the language
+      char *lang = p+3;
+      char *lang_end;
+      static char rangesendl[] = "\x0a\x0a";
+      p = findchar_fast(p, end, rangesendl, sizeof(rangesendl) - 1, &found);
+      if ( lang == p ) {
+        lang = NULL;
+      } 
+      lang_end = p;
       // Scan to closing ``` and if not found we ignore
 
-      p += 4; 
       char *st = p;
       static char ranges1[] = "``";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
       if ( found ) {
         if ( p[-1] == '\n' && p[1] == '`' && p[2] == '`' ) {
-          memcpy( e->o, "<pre><code>", 11 ); e->o += 11;
-          memcpy( e->o, st, p-st ); e->o += p-st;
-          memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
+
+          if ( lang != NULL ) {
+            memcpy( e->o, "<pre><code class=", 17 ); e->o += 17;
+            memcpy( e->o, lang, lang_end-lang ); e->o += lang_end-lang;
+            *(e->o++) = '>'; 
+            memcpy( e->o, st, p-st ); e->o += p-st;
+            memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
+          } else {
+            memcpy( e->o, "<pre><code>", 11 ); e->o += 11;
+            memcpy( e->o, st, p-st ); e->o += p-st;
+            memcpy( e->o, "</code></pre>\n", 14 ); e->o += 14;  
+          }
           p += 2;
         }  
       } else {
@@ -713,7 +861,7 @@ PyObject *_render( PyObject *md, Encoder *e ) {
         }  
       }
     }
-// TODO Only do one hr method
+    // TODO Only do one hr method would be faster? 
     else if ( p[0] == '*' && p[1] == '*' && p[2] == '*'  ) {
       memcpy( e->o, "<hr>\x0a", 5); e->o += 5;
       static char ranges1[] = "\x0a\x0a";
@@ -729,12 +877,16 @@ PyObject *_render( PyObject *md, Encoder *e ) {
       static char ranges1[] = "\x0a\x0a";
       p = findchar_fast(p, end, ranges1, sizeof(ranges1) - 1, &found);
     }
-    else if ( p[0] == ' ' && list ) {
-    }
     else {
+      handled = 0;
+  	}
 
+    if ( handled == 0 ) {
+
+      //printf("DELME not handled >%.*s<\n", 4, p);
+      //print_buffer(p, 4);
       //if ( !bq ) {
-      if ( para == 0 ) {
+      if ( para == 0 && !list ) {
         *((unsigned int*)e->o) = CHAR4_INT('<','p','>','z');
         e->o += 3;
         para = 1;
@@ -765,28 +917,30 @@ PyObject *_render( PyObject *md, Encoder *e ) {
   }
   if ( bq ) {
     if ( para ) e->o -= 1;
-    memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
+    while ( bq ) {
+      bq -= 1;
+      memcpy( e->o, "\n</blockquote>", 14 ); e->o += 14;
+    }
     //*(e->o) = '\n'; e->o += 1;
   }
   if ( list ) {
-    // TODO uint64 * this
     *((unsigned long*)e->o) = CHAR8_LONG('<','/','l','i','>', 0x0a,0,0); e->o += 6;
-    //*(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'l'; *(e->o++) = 'i'; *(e->o++) = '>'; *(e->o++) = 0x0A;
-    if ( list == 2 ) {
-      //*(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'u'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
+    if ( list_type == 2 ) {
       *((unsigned long*)e->o) = CHAR8_LONG('<','/','u','l','>', 0x0a,0,0); e->o += 6;
     } else {
-      //*(e->o++) = '<'; *(e->o++) = '/'; *(e->o++) = 'o'; *(e->o++) = 'l'; *(e->o++) = '>'; *(e->o++) = 0x0A;
       *((unsigned long*)e->o) = CHAR8_LONG('<','/','o','l','>', 0x0a,0,0); e->o += 6;
     }
   }
 
+  //return PyBytes_FromStringAndSize( e->start, e->o-e->start );  
   return PyUnicode_FromStringAndSize( e->start, e->o-e->start );  
 }
 
 PyObject* render(PyObject* self, PyObject *md) {
 
   Encoder enc = { NULL,NULL,NULL };
+
+  if ( !PyUnicode_Check(md) ) { PyErr_SetString(PyExc_TypeError, "The render argument must be a string"); return NULL; }
 
   int len = 65536;
   char *s = (char *) malloc (len);
@@ -805,7 +959,7 @@ PyObject* render(PyObject* self, PyObject *md) {
   //unsigned long long end = rdtsc();
   //printf("Cycles end %lld\n", end);
   //printf("Cycles spent is %lld\n", (uint64_t)end-start);
-  free(s);
+  free(enc.start);
   return ret;
  
 }

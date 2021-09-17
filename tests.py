@@ -2,7 +2,7 @@
 
 import mistletoe
 import mrfastmark as fm
-import inspect
+import inspect, random, string
 import mistune
 mis = mistune.Markdown()
 
@@ -35,6 +35,7 @@ def eq( a, b, o ):
     pbuf(b)
     #pbuf(mistletoe.markdown(o))
     pbuf(mis(o))
+    exit()
     return -1
   return 0
 
@@ -47,12 +48,25 @@ tsts =[
   [ "This is some [markdown rendered by mrfastmark](https://github.com/MarkReedZ/mrfastmark)\x0a\x0aIs it working?", 
     "<p>This is some <a href=\"https://github.com/MarkReedZ/mrfastmark\">markdown rendered by mrfastmark</a></p>\x0a<p>Is it working?</p>\x0a" ],
 
+  # Headers
+  [ "##5 dogs","<p>##5 dogs</p>\x0a"], # must have a space after the header #.  
+  #[ "#         spaces         ","<h1>spaces</h1>\x0a"], 
+  [ "## head","<h2>head</h2>\x0a"], 
+  [ "### head","<h3>head</h3>\x0a"], 
+  [ "#### head","<h4>head</h4>\x0a"], 
+  [ "##### head","<h5>head</h5>\x0a"], 
+  [ "###### head","<h6>head</h6>\x0a"], 
+  [ "#→Foo","<p>#→Foo</p>\x0a"], # must have a space after the header #.  
+
   # Auto link
   [ "This is a link http://github.com/MarkReedZ/mrfastmark", "<p>This is a link <a href=\"http://github.com/MarkReedZ/mrfastmark\">http://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "This is a link https://github.com/MarkReedZ/mrfastmark", "<p>This is a link <a href=\"https://github.com/MarkReedZ/mrfastmark\">https://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "This is a link http://github.com/MarkReedZ/mrfastmark\x0a\x0a", "<p>This is a link <a href=\"http://github.com/MarkReedZ/mrfastmark\">http://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "This is a link https://github.com/MarkReedZ/mrfastmark\x0a\x0a", "<p>This is a link <a href=\"https://github.com/MarkReedZ/mrfastmark\">https://github.com/MarkReedZ/mrfastmark</a></p>\x0a" ],
   [ "irc://foo.bar:2233/baz\x0a", "<p>irc://foo.bar:2233/baz</p>\x0a" ],
+
+  [ "[link text](http://dev.nodeca.com)", '<p><a href="http://dev.nodeca.com">link text</a></p>\x0a' ],
+
 
   # Double break after p?
   [ "<&\"z##", """<p>&lt;&amp;&quot;z##</p>\x0a"""],
@@ -62,15 +76,17 @@ tsts =[
   [ ">test\nalso quoted\n\nNot","<blockquote>\x0a<p>test\x0aalso quoted</p>\x0a</blockquote>\x0a<p>Not</p>\x0a" ],
 
   # Lists
-  [ "1. one\x0a2. two\x0a3. three", "<ol>\x0a<li><p>one</p>\x0a</li>\x0a<li><p>two</p>\x0a</li>\x0a<li><p>three</p>\x0a</li>\x0a</ol>\x0a" ],
-  [ "- one\x0a- two\x0a- three", "<ul>\x0a<li><p>one</p>\x0a</li>\x0a<li><p>two</p>\x0a</li>\x0a<li><p>three</p>\x0a</li>\x0a</ul>\x0a" ],
+  [ "1. one\x0a2. two\x0a3. three", "<ol>\x0a<li> one</li>\x0a<li> two</li>\x0a<li> three</li>\x0a</ol>\x0a" ],
+  [ "- one\x0a- two\x0a- three", "<ul>\x0a<li> one</li>\x0a<li> two</li>\x0a<li> three</li></ul>" ],
+  [ "-notalist\x0a- two\x0a-three", "<p>-notalist</p>\x0a<ul>\x0a<li> two\x0a-three</li>\x0a</ul>\x0a" ],
+
   # TODO more
 
   # Code block
-  [ "``` no closer", "foo" ],
-  [ "```\x0a- one\x0a- two\x0a- three\x0a```", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
-  [ "Albert\x0a```\x0a- one\x0a- two\x0a- three\x0a```Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
-  [ "foo\x0a```\x0abar\x0a```\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
+  #[ "``` no closer", "foo" ],  # What to do here? Close it on end of input?
+  [ "```\x0a- one\x0a- two\x0a- three\x0a```", "<pre><code>\x0a- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
+  [ "Albert\x0a```\x0a- one\x0a- two\x0a- three\x0a```Einstein", "<p>Albert</p>\x0a<pre><code>\x0a- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
+  [ "foo\x0a```\x0abar\x0a```\x0abaz","<p>foo</p>\x0a<pre><code>\x0abar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
   [ "~~~\x0a- one\x0a- two\x0a- three\x0a~~~", "<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a" ],
   [ "Albert\x0a~~~\x0a- one\x0a- two\x0a- three\x0a~~~Einstein", "<p>Albert</p>\x0a<pre><code>- one\x0a- two\x0a- three\x0a</code></pre>\x0a<p>Einstein</p>\x0a"], # cm spec ignores Einstein
   [ "foo\x0a~~~\x0abar\x0a~~~\x0abaz","<p>foo</p>\x0a<pre><code>bar\x0a</code></pre>\x0a<p>baz</p>\x0a" ],
@@ -86,7 +102,6 @@ tsts =[
   # Unicode 
   [ "Foo χρῆν\x0a","<p>Foo χρῆν</p>\x0a" ],
   [ "快点好","<p>快点好</p>\x0a"],
-
   [ "foo\\x0a","<p>foo\\x0a</p>\x0a" ],
   [ "foo  \x0a","<p>foo  </p>\x0a" ],
   [ "### foo\\x0a","<h3>foo\\x0a</h3>\x0a" ],
@@ -109,8 +124,9 @@ tsts =[
   [ "\**hello*\*",          "<p>*<em>hello</em>*</p>\x0a" ],
   [ "*hello \* world*",     "<p><em>hello * world</em></p>\x0a"],
   [ "**hello \* world**",   "<p><strong>hello * world</strong></p>\x0a"],
-  [ "`hello \` world`", "<p><code>hello ` world</code></p>\x0a"],
-  [ "&#X22; &#XD06; &#xcab;", "TODO" ],
+  [ "No escape inside code blocks `\` ", "<p>No escape inside code blocks <code>\</code> </p>\x0a" ],
+  #[ "&#X22; &#XD06; &#xcab;", "TODO" ],
+
 
 #576 ><foo\+@bar.example.com>\x0a<
 #576 ><p>&lt;foo+@bar.example.com&gt;</p>\x0a<
@@ -121,10 +137,26 @@ tsts =[
 for t in tsts:
   eq( fm.render(t[0]), t[1], t[0] )
 
-# TODO strip html tags test, need to set option
 
 
 print("Testing Exceptions..")
-#raises( "NaNd",         j.loads, ValueError, "Expecting 'NaN' at pos 0" )
+raises( b"NaNd",         fm.render, TypeError, "The render argument must be a string" )
+
+print("Testing garbage..")
+
+# Make sure we don't seg fault on random unicode strings
+for x in range(100):
+  s = ""
+  for z in range(random.randrange(0,2000)):
+    s += chr(random.randrange(0,0x10FFFF))
+  try:
+    fm.render(s)
+  except Exception as e:
+    pass
+
+# random ascii?
+for x in range(100):
+  s = ''.join(random.choice(string.ascii_letters) for m in range(random.randrange(1,20000)))
+  fm.render(s)
 
 print("Done")
